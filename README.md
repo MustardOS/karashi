@@ -1,5 +1,3 @@
-# Karashi
-
 <p align="left"><img src="assets/karashi-logo.svg" alt="Karashi" width="480"></p>
 
 An independent Libretro core for SEGA 8-bit and 16-bit systems.
@@ -56,14 +54,14 @@ make -j2
 make check
 ```
 
-- `make check` runs the component tests and loads the core through its Libretro interface.
+- `make check` runs the component tests and loads the core through the Libretro interface.
 - `make tools` builds the capture, benchmark, probe and exerciser tools.
-- `m68kvec` runs 68000 single-instruction test vectors.
+- `m68kvec` runs 68000 single instruction test vectors.
 - `ramdiff` compares the system RAM of two cores frame by frame.
 - `tools/compare.py` compares frames with a reference core.
-- `tools/audio_compare.py` compares averaged spectra with a reference core without assuming sample phase alignment.
-- `KARASHI_REFERENCE_SYSTEM_DIR` can give the reference process a separate system directory; an empty value exposes no BIOS directory to the reference.
+- `tools/audio_compare.py` compares average samples with a reference core.
 - `tools/hashes.py` checks that two builds give the same video and audio.
+- `KARASHI_REFERENCE_SYSTEM_DIR` can give the reference process a separate system directory.
 
 ```sh
 make BUILD_DIR=build-aarch64 CC=aarch64-buildroot-linux-gnu-gcc
