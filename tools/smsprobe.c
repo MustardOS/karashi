@@ -1,3 +1,4 @@
+#include "content.h"
 #include "sms.h"
 
 #include <stdio.h>
@@ -31,6 +32,7 @@ int main(int argc, char **argv) {
 	unsigned frame;
 	unsigned line;
 	unsigned maximum = 0;
+	enum karashi_region region;
 
 	if (argc != 3) return 2;
 	frames = (unsigned) strtoul(argv[2], NULL, 0);
@@ -39,7 +41,11 @@ int main(int argc, char **argv) {
 	rom = malloc((size_t) length);
 	if (!rom || fread(rom, 1, (size_t) length, file) != (size_t) length) return 1;
 	fclose(file);
-	karashi_sms_init(&machine, rom, (size_t) length, false, false, true);
+	region = karashi_content_region(argv[1], rom, (size_t) length);
+	karashi_sms_init(
+		&machine, rom, (size_t) length, false, region == KARASHI_REGION_JAPAN,
+		region == KARASHI_REGION_EXPORT_PAL
+	);
 	for (frame = 0; frame < frames; frame++) {
 		unsigned phase = frame % 120;
 		uint8_t pad = 0;
@@ -59,9 +65,11 @@ int main(int argc, char **argv) {
 		if (line >= 17 && count >= 6) printf("line=%u sprites=%u\n", line, count);
 	}
 	printf(
-		"frames=%u pc=%04x height=%u maximum=%u status=%02x table=%04x mode=%02x,%02x\n", frames,
+		"frames=%u pc=%04x height=%u maximum=%u status=%02x table=%04x mode=%02x,%02x region=%s fps=%.6f audio=%u\n", frames,
 		machine.cpu.pc, machine.vdp.height, maximum, machine.vdp.tms.status,
-		(machine.vdp.tms.registers[5] & 0x7e) << 7, machine.vdp.tms.registers[0], machine.vdp.tms.registers[1]
+		(machine.vdp.tms.registers[5] & 0x7e) << 7, machine.vdp.tms.registers[0], machine.vdp.tms.registers[1],
+		region == KARASHI_REGION_EXPORT_PAL ? "PAL" : region == KARASHI_REGION_JAPAN ? "Japan NTSC" : "Export NTSC",
+		karashi_sms_frame_rate(&machine), machine.audio_frames
 	);
 	{
 		unsigned table = (machine.vdp.tms.registers[5] & 0x7e) << 7;

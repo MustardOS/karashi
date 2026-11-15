@@ -101,7 +101,12 @@ static bool tags_have(const char *tags, size_t length, const char *const *words)
 }
 
 static bool needs_pal(const uint8_t *data, size_t size) {
-	static const uint32_t checksums[] = {0x2d48c1d3, 0x7e5839a0, 0xc0e25d62};
+	static const uint32_t checksums[] = {
+		0x0047b615, 0x1575581d, 0x1b10a951, 0x29822980, 0x2d48c1d3,
+		0x332a847d, 0x5b3b922c, 0x72420f38, 0x7e5839a0, 0x85cfc9c9,
+		0x8813514b, 0x9f951756, 0xa109a6fe, 0xa577ce46, 0xb9664ae1,
+		0xc0e25d62, 0xc9dbf936, 0xca1d3752, 0xd6f2bfca, 0xf8176918
+	};
 	uint32_t checksum;
 	size_t index;
 
@@ -114,12 +119,15 @@ static bool needs_pal(const uint8_t *data, size_t size) {
 }
 
 enum karashi_region karashi_content_region(const char *path, const uint8_t *data, size_t size) {
-	static const char *const ntsc[] = {"USA", "World", "Brazil", "Europe", NULL};
+	static const char *const ntsc[] = {"USA", "World", "Brazil", NULL};
 	static const char *const japan[] = {"Japan", "Korea", "Taiwan", NULL};
+	static const char *const pal[] = {"Europe", "Australia", "New Zealand", NULL};
 	const char *name;
 	const char *open;
 	const char *close;
 	size_t length;
+	bool japanese;
+	bool european;
 
 	if (needs_pal(data, size)) return KARASHI_REGION_EXPORT_PAL;
 	if (!path) return KARASHI_REGION_EXPORT_NTSC;
@@ -131,7 +139,11 @@ enum karashi_region karashi_content_region(const char *path, const uint8_t *data
 	length = (size_t) (close - open);
 
 	if (tags_have(open, length, ntsc)) return KARASHI_REGION_EXPORT_NTSC;
-	if (tags_have(open, length, japan)) return KARASHI_REGION_JAPAN;
+	japanese = tags_have(open, length, japan);
+	european = tags_have(open, length, pal);
+	if (japanese && european) return KARASHI_REGION_EXPORT_NTSC;
+	if (european) return KARASHI_REGION_EXPORT_PAL;
+	if (japanese) return KARASHI_REGION_JAPAN;
 	return KARASHI_REGION_EXPORT_NTSC;
 }
 

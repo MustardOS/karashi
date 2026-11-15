@@ -173,6 +173,7 @@ int main(int argc, char **argv) {
 	void (*deinit)(void);
 	void (*get_system_info)(struct retro_system_info *);
 	void (*get_system_av_info)(struct retro_system_av_info *);
+	unsigned (*get_region)(void);
 	void (*set_controller_port_device)(unsigned, unsigned);
 	bool (*load_game)(const struct retro_game_info *);
 	void (*run)(void);
@@ -219,6 +220,7 @@ int main(int argc, char **argv) {
 	load_symbol(library, "retro_deinit", &deinit, sizeof(deinit));
 	load_symbol(library, "retro_get_system_info", &get_system_info, sizeof(get_system_info));
 	load_symbol(library, "retro_get_system_av_info", &get_system_av_info, sizeof(get_system_av_info));
+	load_symbol(library, "retro_get_region", &get_region, sizeof(get_region));
 	load_symbol(
 		library, "retro_set_controller_port_device", &set_controller_port_device, sizeof(set_controller_port_device)
 	);
@@ -246,7 +248,7 @@ int main(int argc, char **argv) {
 	memset(&info, 0, sizeof(info));
 	get_system_info(&info);
 	assert(info.library_name && strcmp(info.library_name, "Karashi") == 0);
-	assert(info.library_version && strcmp(info.library_version, "1.0.7") == 0);
+	assert(info.library_version && strcmp(info.library_version, "1.0.8") == 0);
 	assert(info.valid_extensions && strstr(info.valid_extensions, "sg"));
 
 	memset(&game, 0, sizeof(game));
@@ -333,11 +335,14 @@ int main(int argc, char **argv) {
 	assert(mkdtemp(system_directory));
 	assert(!load_game(&game));
 	write_bios("bios_U.sms", 0x2000, 0, z80_handoff, sizeof(z80_handoff));
+	write_bios("bios_E.sms", 0x2000, 0, z80_handoff, sizeof(z80_handoff));
 	write_bios("bios.gg", 0x400, 0, z80_handoff, sizeof(z80_handoff));
 	write_bios("bios_MD.bin", 0x800, 0x200, tmss_handoff, sizeof(tmss_handoff));
 	assert(load_game(&game));
 	get_system_av_info(&av_info);
 	assert(av_info.geometry.base_width == 256);
+	assert(av_info.timing.fps > 59.9 && av_info.timing.fps < 59.95);
+	assert(get_region() == RETRO_REGION_NTSC);
 	assert(get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 8192);
 	assert(get_memory_size(RETRO_MEMORY_SAVE_RAM) == 32768);
 	run();
@@ -351,6 +356,12 @@ int main(int argc, char **argv) {
 	assert(unserialize(state, state_size));
 	assert(ram[0x100] == 0x00);
 	free(state);
+	unload_game();
+	game.path = "karashi-diagnostic (Europe).sms";
+	assert(load_game(&game));
+	get_system_av_info(&av_info);
+	assert(av_info.timing.fps > 49.69 && av_info.timing.fps < 49.71);
+	assert(get_region() == RETRO_REGION_PAL);
 	unload_game();
 
 	game.path = "karashi-diagnostic.gg";
@@ -419,6 +430,7 @@ int main(int argc, char **argv) {
 	deinit();
 	dlclose(library);
 	remove_bios("bios_U.sms");
+	remove_bios("bios_E.sms");
 	remove_bios("bios.gg");
 	remove_bios("bios_MD.bin");
 	rmdir(system_directory);

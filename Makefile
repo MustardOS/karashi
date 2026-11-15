@@ -1,9 +1,11 @@
 CC ?= cc
 BUILD_DIR ?= build
 CORE := $(BUILD_DIR)/karashi_libretro.so
+
 CPPFLAGS += -Isrc
 CFLAGS ?= -O3
 CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -fPIC -fvisibility=hidden
+
 LDFLAGS += -shared -Wl,--no-undefined -Wl,--version-script=link.T
 PGO_DIR ?= $(abspath $(BUILD_DIR))/pgo
 
@@ -15,11 +17,22 @@ ifeq ($(PGO),use)
 CFLAGS += -fprofile-use -fprofile-partial-training -fprofile-dir=$(PGO_DIR) -Wno-missing-profile -Wno-error=coverage-mismatch
 endif
 
-HARDWARE := src/content.c src/scheduler.c src/state.c src/z80.c src/m68k.c src/sh2.c src/mars.c src/eeprom.c src/eeprom93.c src/spi_eeprom.c src/tms9918.c src/smsvdp.c src/mdvdp.c src/sn76489.c src/ym2413.c src/ym2612.c \
+HARDWARE := src/content.c src/scheduler.c src/state.c \
+	src/z80.c src/m68k.c src/sh2.c src/mars.c \
+	src/eeprom.c src/eeprom93.c src/spi_eeprom.c \
+	src/tms9918.c src/smsvdp.c src/mdvdp.c \
+	src/sn76489.c src/ym2413.c src/ym2612.c \
 	src/sg1000.c src/sms.c src/md.c
+
 SOURCES := src/libretro.c $(HARDWARE)
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
-TESTS := content scheduler state z80 m68k sh2 mars eeprom eeprom93 spi_eeprom tms9918 smsvdp mdvdp sn76489 ym2413 ym2612 sg1000 sms md
+
+TESTS := content scheduler state \
+	z80 m68k sh2 mars \
+	eeprom eeprom93 spi_eeprom \
+	tms9918 smsvdp mdvdp \
+	sn76489 ym2413 ym2612 \
+	sg1000 sms md
 TEST_BINARIES := $(patsubst %,$(BUILD_DIR)/%_test,$(TESTS))
 TEST_FLAGS := $(CFLAGS)
 

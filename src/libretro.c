@@ -654,7 +654,7 @@ void retro_deinit(void) {
 void retro_get_system_info(struct retro_system_info *info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "Karashi";
-	info->library_version = "1.0.7";
+	info->library_version = "1.0.8";
 	info->valid_extensions = "bin|gen|md|smd|32x|sms|gg|sg|sg1000|sc";
 	info->need_fullpath = false;
 	info->block_extract = false;
