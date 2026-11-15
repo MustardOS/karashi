@@ -27,6 +27,10 @@ static bool environment(unsigned command, void *data) {
 static void video(const void *data, unsigned width, unsigned height, size_t pitch) {
 	unsigned x, y;
 	if (!data) return;
+	if (!width || !height || width > (sizeof frame / sizeof frame[0]) / height) {
+		fputs("capture: frame dimensions exceed buffer capacity\n", stderr);
+		exit(EXIT_FAILURE);
+	}
 	frame_width = width; frame_height = height;
 	for (y = 0; y < height; y++) {
 		const uint8_t *row = (const uint8_t *) data + y * pitch;
@@ -95,7 +99,7 @@ int main(int argc, char **argv) {
 			if (frame_number + 1 == (unsigned) atoi(argv[next])) {
 				uint32_t header[2] = {frame_width, frame_height};
 				fwrite(header, 4, 2, out);
-				fwrite(frame, 4, frame_width * frame_height, out);
+				fwrite(frame, sizeof frame[0], (size_t) frame_width * frame_height, out);
 				next++;
 			}
 		}
