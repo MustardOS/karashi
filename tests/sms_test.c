@@ -198,8 +198,19 @@ static void test_pal(void) {
 	assert(machine.audio_frames >= 965 && machine.audio_frames <= 967);
 	assert(karashi_sms_frame_rate(&machine) > 49.69 && karashi_sms_frame_rate(&machine) < 49.71);
 	assert(karashi_sms_height(&machine) == 192);
+	machine.ram[0] = 0x5a;
+	start = machine.cpu.cycles;
+	karashi_sms_set_region(&machine, false, false);
+	assert(!machine.pal && !machine.vdp.pal && !machine.japanese && !machine.fm_present);
+	assert(machine.psg.clock_rate == KARASHI_SEGA8_CPU_CLOCK);
+	assert(machine.cpu.cycles == start && machine.ram[0] == 0x5a);
+	assert(karashi_sms_frame_rate(&machine) > 59.92 && karashi_sms_frame_rate(&machine) < 59.93);
+	karashi_sms_set_region(&machine, true, false);
+	assert(machine.japanese && machine.fm_present && machine.fm_clock == machine.cpu.cycles);
 	karashi_sms_init(&machine, rom, sizeof(rom), true, false, true);
 	assert(!machine.pal);
+	karashi_sms_set_region(&machine, false, true);
+	assert(!machine.pal && !machine.vdp.pal);
 }
 
 static void test_state(void) {

@@ -43,6 +43,9 @@
   - [x] Resolve the eight early one-sided silence cases with a later capture.
 - [x] California Games II selector timing and PAL identification.
 - [x] PAL timing and the Region option.
+  - [x] Real-region Auto selection for Europe-only, Australia-only and New Zealand-only content.
+  - [x] Complete known PAL-required CRC coverage with explicitly verified NTSC revisions retained.
+  - [x] Live core-option region changes with state-preserving clock updates and frontend AV reconfiguration.
 - [x] 224 and 240 line display modes.
 - [x] YM2413 FM sound.
   - [x] Instrument table confirmed against the published YM2413B die extraction.

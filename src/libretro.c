@@ -42,6 +42,7 @@ static uint8_t *content_data;
 static const uint8_t *content_rom;
 static size_t content_size;
 static enum karashi_system content_system;
+static enum karashi_region content_auto_region;
 static struct karashi_sg1000 sg1000;
 static struct karashi_sms sms;
 static struct karashi_sg1000 sg1000_scratch;
@@ -197,7 +198,7 @@ static bool load_bios(const char *path, enum karashi_region region) {
 	}
 }
 
-static enum karashi_region read_region(const char *path, const uint8_t *data, size_t size) {
+static enum karashi_region read_region(void) {
 	struct retro_variable variable = {"karashi_region", NULL};
 
 	if (environment_cb && environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) && variable.value) {
@@ -205,7 +206,7 @@ static enum karashi_region read_region(const char *path, const uint8_t *data, si
 		if (strcmp(variable.value, "Export PAL") == 0) return KARASHI_REGION_EXPORT_PAL;
 		if (strcmp(variable.value, "Japan NTSC") == 0) return KARASHI_REGION_JAPAN;
 	}
-	return karashi_content_region(path, data, size);
+	return content_auto_region;
 }
 
 static enum karashi_md_region read_md_region(void) {
@@ -544,6 +545,7 @@ static void unload_content(void) {
 	content_rom = NULL;
 	content_size = 0;
 	content_system = KARASHI_SYSTEM_UNKNOWN;
+	content_auto_region = KARASHI_REGION_EXPORT_NTSC;
 	state_size = 0;
 	free_bios();
 }
@@ -694,9 +696,26 @@ void retro_reset(void) {
 	else if (md_active()) karashi_md_reset(&md);
 }
 
-void retro_run(void) {
+static void apply_option_updates(void) {
 	bool updated = false;
+	struct retro_system_av_info info;
 
+	if (!environment_cb || !environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) || !updated) return;
+	if (sms_active()) {
+		enum karashi_region region = read_region();
+		karashi_sms_set_region(
+			&sms, region == KARASHI_REGION_JAPAN, region == KARASHI_REGION_EXPORT_PAL
+		);
+	} else if (md_active()) {
+		karashi_md_change_region(&md, read_md_region());
+		apply_md_pads();
+	} else return;
+	retro_get_system_av_info(&info);
+	environment_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+}
+
+void retro_run(void) {
+	apply_option_updates();
 	apply_cheats();
 	input_poll_cb();
 	if (content_system == KARASHI_SYSTEM_SG1000) {
@@ -738,7 +757,6 @@ void retro_run(void) {
 		for (port = 0; port < KARASHI_MD_CONTROLLER_PORTS; port++) {
 			karashi_md_set_controller(&md, port, read_md_pad(port));
 		}
-		if (environment_cb && environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) apply_md_pads();
 		karashi_md_run_frame(&md);
 		if (md.width != video_width || md.height != video_height) {
 			struct retro_system_av_info info;
@@ -824,7 +842,8 @@ bool retro_load_game(const struct retro_game_info *game) {
 	memset(copy + game->size, 0xff, capacity - game->size);
 
 	content_system = karashi_content_detect(game->path, copy, game->size);
-	region = read_region(game->path, copy, game->size);
+	content_auto_region = karashi_content_region(game->path, copy, game->size);
+	region = read_region();
 	if (content_system == KARASHI_SYSTEM_UNKNOWN || !load_bios(game->path, region)) {
 		free(copy);
 		free_bios();
@@ -845,7 +864,8 @@ bool retro_load_game(const struct retro_game_info *game) {
 		karashi_sg1000_init(&sg1000, content_rom, content_size, karashi_content_is_sc3000(game->path));
 	}
 	else if (sms_active()) {
-		region = read_region(game->path, content_rom, content_size);
+		content_auto_region = karashi_content_region(game->path, content_rom, content_size);
+		region = read_region();
 		karashi_sms_init(
 			&sms, content_rom, content_size, content_system == KARASHI_SYSTEM_GAME_GEAR,
 			region == KARASHI_REGION_JAPAN, region == KARASHI_REGION_EXPORT_PAL

@@ -22,6 +22,10 @@ static uint64_t video_hash;
 static uint64_t audio_hash;
 static uint32_t input_ids[4];
 static char system_directory[256];
+static const char *region_option = "Auto";
+static bool option_updated;
+static unsigned av_updates;
+static double updated_fps;
 
 static const uint8_t z80_handoff[] = {
 	0x21, 0x00, 0xc0, 0x36, 0xd3, 0x23, 0x36, 0x3e, 0x23, 0x36, 0xc3, 0x23, 0x36, 0x00, 0x23, 0x36, 0x00,
@@ -89,10 +93,22 @@ static bool environment(unsigned command, void *data) {
 	if (command == RETRO_ENVIRONMENT_GET_VARIABLE) {
 		struct retro_variable *variable = data;
 		if (variable && variable->key && strcmp(variable->key, "karashi_region") == 0) {
-			variable->value = "Auto";
+			variable->value = region_option;
 			return true;
 		}
 		return false;
+	}
+	if (command == RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE) {
+		*(bool *) data = option_updated;
+		option_updated = false;
+		return true;
+	}
+	if (command == RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO) {
+		const struct retro_system_av_info *info = data;
+		assert(info);
+		updated_fps = info->timing.fps;
+		av_updates++;
+		return true;
 	}
 	if (command == RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS) {
 		described = true;
@@ -191,6 +207,7 @@ int main(int argc, char **argv) {
 	uint64_t expected_video_hash;
 	uint64_t expected_audio_hash;
 	size_t state_size;
+	size_t audio_before;
 	struct retro_system_info info;
 	struct retro_system_av_info av_info;
 	struct retro_game_info game;
@@ -362,6 +379,18 @@ int main(int argc, char **argv) {
 	get_system_av_info(&av_info);
 	assert(av_info.timing.fps > 49.69 && av_info.timing.fps < 49.71);
 	assert(get_region() == RETRO_REGION_PAL);
+	region_option = "Export NTSC";
+	option_updated = true;
+	audio_before = audio_frames;
+	run();
+	assert(av_updates == 1 && updated_fps > 59.9 && updated_fps < 59.95);
+	assert(get_region() == RETRO_REGION_NTSC && audio_frames - audio_before >= 800 && audio_frames - audio_before <= 802);
+	region_option = "Auto";
+	option_updated = true;
+	audio_before = audio_frames;
+	run();
+	assert(av_updates == 2 && updated_fps > 49.69 && updated_fps < 49.71);
+	assert(get_region() == RETRO_REGION_PAL && audio_frames - audio_before >= 965 && audio_frames - audio_before <= 967);
 	unload_game();
 
 	game.path = "karashi-diagnostic.gg";
@@ -372,7 +401,7 @@ int main(int argc, char **argv) {
 	expected_width = 160;
 	expected_height = 144;
 	run();
-	assert(video_frames == 13);
+	assert(video_frames == 15);
 	assert(serialize_size() == state_size);
 	unload_game();
 
@@ -396,7 +425,7 @@ int main(int argc, char **argv) {
 	expected_width = 256;
 	expected_height = 224;
 	run();
-	assert(video_frames == 14);
+	assert(video_frames == 16);
 	assert(input_ids[2] & (UINT32_C(1) << RETRO_DEVICE_ID_JOYPAD_B));
 	assert(input_ids[3] & (UINT32_C(1) << RETRO_DEVICE_ID_JOYPAD_B));
 	assert(get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 65536);
@@ -424,7 +453,7 @@ int main(int argc, char **argv) {
 	run();
 	assert(video_hash == expected_video_hash);
 	assert(audio_hash == expected_audio_hash);
-	assert(video_frames == 19);
+	assert(video_frames == 21);
 	free(state);
 	unload_game();
 	deinit();

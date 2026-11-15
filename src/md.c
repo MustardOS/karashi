@@ -909,6 +909,24 @@ void karashi_md_set_region(struct karashi_md *machine, enum karashi_md_region re
 	karashi_md_reset(machine);
 }
 
+void karashi_md_change_region(struct karashi_md *machine, enum karashi_md_region region) {
+	uint32_t old_clock = machine->master_clock;
+	enum karashi_md_region active = region;
+
+	machine->region = (uint8_t) region;
+	if (active == KARASHI_MD_REGION_AUTO) active = header_region(machine);
+	machine->pal = active == KARASHI_MD_REGION_EUROPE;
+	machine->version = (uint8_t) ((active == KARASHI_MD_REGION_JAPAN ? 0x00 : 0x80)
+	                              | (machine->pal ? 0x40 : 0) | 0x20 | (machine->tmss ? 1 : 0));
+	machine->master_clock = machine->pal ? KARASHI_MD_PAL_CLOCK : KARASHI_MD_NTSC_CLOCK;
+	if (old_clock && old_clock != machine->master_clock) {
+		machine->audio_clock = (uint32_t) ((uint64_t) machine->audio_clock * machine->master_clock / old_clock);
+	}
+	machine->psg.clock_rate = machine->master_clock / 15;
+	karashi_mdvdp_set_pal(&machine->vdp, machine->pal);
+	if (machine->mars_present) machine->mars.pal = machine->pal;
+}
+
 void karashi_md_set_pad(struct karashi_md *machine, unsigned port, enum karashi_md_pad type) {
 	if (port < KARASHI_MD_CONTROLLER_PORTS) machine->pad_type[port] = (uint8_t) type;
 }

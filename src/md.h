@@ -152,6 +152,7 @@ void karashi_md_attach_mars(
 );
 void karashi_md_set_tmss(struct karashi_md *machine, const uint8_t *tmss, size_t tmss_size);
 void karashi_md_set_region(struct karashi_md *machine, enum karashi_md_region region);
+void karashi_md_change_region(struct karashi_md *machine, enum karashi_md_region region);
 void karashi_md_set_pad(struct karashi_md *machine, unsigned port, enum karashi_md_pad type);
 void karashi_md_rebind(struct karashi_md *machine);
 void karashi_md_reset(struct karashi_md *machine);

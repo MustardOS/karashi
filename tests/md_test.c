@@ -712,6 +712,14 @@ static void test_regions(void) {
 	}
 	karashi_md_set_region(&machine, KARASHI_MD_REGION_EUROPE);
 	assert(machine.pal && machine.version == 0xe0);
+	machine.work_ram[0] = 0x5a;
+	machine.cpu.cycles = 1234;
+	karashi_md_change_region(&machine, KARASHI_MD_REGION_USA);
+	assert(!machine.pal && machine.version == 0xa0 && machine.vdp.lines == 262);
+	assert(machine.master_clock == KARASHI_MD_NTSC_CLOCK && machine.psg.clock_rate == KARASHI_MD_NTSC_CLOCK / 15);
+	assert(machine.work_ram[0] == 0x5a && machine.cpu.cycles == 1234);
+	karashi_md_change_region(&machine, KARASHI_MD_REGION_JAPAN);
+	assert(!machine.pal && machine.version == 0x20 && machine.work_ram[0] == 0x5a);
 }
 
 static void test_timing(void) {

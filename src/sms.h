@@ -106,6 +106,7 @@ void karashi_sms_init(
 unsigned karashi_sms_height(const struct karashi_sms *machine);
 double karashi_sms_frame_rate(const struct karashi_sms *machine);
 void karashi_sms_set_bios(struct karashi_sms *machine, const uint8_t *bios, size_t bios_size);
+void karashi_sms_set_region(struct karashi_sms *machine, bool japanese, bool pal);
 void karashi_sms_reset(struct karashi_sms *machine);
 void karashi_sms_set_controller(struct karashi_sms *machine, unsigned port, uint8_t state);
 void karashi_sms_set_pause(struct karashi_sms *machine, bool pressed);

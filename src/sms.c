@@ -453,6 +453,21 @@ void karashi_sms_set_bios(struct karashi_sms *machine, const uint8_t *bios, size
 	karashi_sms_reset(machine);
 }
 
+void karashi_sms_set_region(struct karashi_sms *machine, bool japanese, bool pal) {
+	uint32_t old_clock = cpu_clock(machine);
+	bool fm_present = japanese && !machine->game_gear;
+
+	machine->japanese = japanese;
+	machine->pal = pal && !machine->game_gear;
+	machine->vdp.pal = machine->pal;
+	if (old_clock != cpu_clock(machine)) {
+		machine->audio_clock = (uint32_t) ((uint64_t) machine->audio_clock * cpu_clock(machine) / old_clock);
+		machine->psg.clock_rate = cpu_clock(machine);
+	}
+	if (fm_present && !machine->fm_present) machine->fm_clock = machine->cpu.cycles;
+	machine->fm_present = fm_present;
+}
+
 void karashi_sms_reset(struct karashi_sms *machine) {
 	struct karashi_z80_bus bus;
 

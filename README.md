@@ -16,7 +16,7 @@ An independent Libretro core for SEGA 8-bit and 16-bit systems.
 
 - A portable Z80 interpreter.
 - TMS9918 video and SEGA VDP mode 4 with scanline timing.
-- NTSC and PAL timing with a Region option.
+- NTSC and PAL timing with a Region option that applies without restarting content.
 - 192, 224 and 240 line pictures.
 - Band-limited SN76489 audio with Game Gear stereo.
 - SEGA, Codemasters, Korean and MSX-style cartridge mappers.

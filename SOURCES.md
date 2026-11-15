@@ -62,6 +62,11 @@
 
 ## Other Notes
 
+Master System region and timing analysis:
+- Genesis Plus GX revision `2499cd3e3d1d8b7d0130d8b2825adb4cc608b2c0`, particularly `core/system.c`, `core/system.h`, `core/loadrom.c` and `core/cart_hw/sms_cart.c`, was used to cross-check the 262-line NTSC and 313-line PAL clocks and the known PAL-required cartridge CRCs.
+- Karashi Auto mode uses real market-region filename tags: Europe-only, Australia-only and New Zealand-only content selects PAL, while USA, World, Brazil and explicitly multi-region 60 Hz content retains NTSC. The explicit Region option remains available for user override.
+- Runtime option changes use the vendored Libretro `RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE` and `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO` contracts so the frontend immediately updates frame pacing and audio cadence.
+
 Source assisted Mega Drive VDP analysis:
 - PicoDrive revision `ec68ce858330cb1f90ece789f2191d82b5bec833`, particularly `pico/videoport.c` and `pico/draw.c`.
 - Genesis Plus GX revision `2499cd3e3d1d8b7d0130d8b2825adb4cc608b2c0`, particularly `core/vdp_ctrl.c` and `core/vdp_render.c`.
