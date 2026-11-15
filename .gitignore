@@ -1,0 +1,46 @@
+# Build output
+/build*/
+
+# Compiler, coverage and profiling output
+*.o
+*.d
+*.a
+*.so
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+/gmon.out
+/perf.data*
+/compile_commands.json
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Local test content and generated captures
+/bios/
+/roms/
+/test-roms/
+/captures/
+/profiles/
+
+# Crash and diagnostic output
+/core
+/core.*
+/vgcore.*
+*.log
+*.tmp
+
+# Editor and operating-system files
+/.cache/
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.orig
+*.rej
