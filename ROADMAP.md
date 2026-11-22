@@ -84,7 +84,9 @@
   - [x] Window, priorities, shadow and highlight, line and column scrolling, interlace mode 2.
   - [x] Sprite line limits, masking, collision and overflow flags.
   - [x] 68000, fill and copy DMA with the transfer time charged to the 68000.
-  - [x] End-of-line raster-state capture for scanline VSRAM effects.
+  - [x] End-of-active-display VSRAM capture isolated from HBlank preparation for the following line.
+  - [x] H32 and H40 partial-column vertical-scroll behaviour.
+  - [x] State version 20 prevents pre-raster-fix states from silently restoring divergent emulated state.
   - [x] Screenshot comparison with a reference core on the established 1,722-game set.
   - [x] FIFO timing and DMA busy flag.
     - [x] Initial four-entry FIFO, VRAM versus CRAM/VSRAM access width, CPU back-pressure, status flags and saved state.
@@ -102,6 +104,7 @@
   - [x] Ten-frame CPU path completes on all 1,725 current base images.
   - [x] SF-004 cartridge mapping used by Star Odyssey.
   - [x] T-5740 512 KiB banking and 25xx/95xx SPI EEPROM used by Pier Solar.
+  - [x] T-5740 byte-only start-up mirroring separated from word and DMA reads.
   - [x] Codemasters J-Cart two-controller expansion and four Libretro input ports.
   - [x] Product-specific mirrored SRAM windows for Barkley Shut Up and Jam 2 and Triple Play.
   - [x] Missing-header SRAM geometry for PGA Tour Golf, Winter Challenge and Buck Rogers.

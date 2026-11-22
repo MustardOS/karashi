@@ -159,12 +159,15 @@ static void test_eeprom_cartridge_detection(void) {
 	assert(machine.cpu.bus.read16(machine.cpu.bus.context, 0x200000) == 0x5aa5);
 	machine.cpu.bus.write16(machine.cpu.bus.context, 0x200000, 0x0000);
 	assert(karashi_state_writer_begin(&writer, state, sizeof(state), 3, 1));
+	machine.z80_bank = 0x1fe;
+	machine.z80_wait_quarters = 3;
 	assert(karashi_md_save(&machine, &writer));
 	assert(karashi_state_writer_finish(&writer, &state_size));
 	karashi_md_init(&restored, rom, sizeof(rom));
 	assert(karashi_state_reader_begin(&reader, state, state_size));
 	assert(karashi_md_load(&restored, &reader));
 	assert(karashi_state_reader_finished(&reader));
+	assert(restored.z80_bank == 0x1fe && restored.z80_wait_quarters == 3);
 	assert(restored.eeprom_read_enabled);
 	assert(restored.cpu.bus.read16(restored.cpu.bus.context, 0x200000) == 1);
 }
@@ -618,7 +621,7 @@ static uint8_t t5740_receive_byte(struct karashi_md *machine) {
 	for (bit = 0; bit < 8; bit++) {
 		t5740_lines(machine, 0x04);
 		t5740_lines(machine, 0x06);
-		value = (uint8_t) (value << 1 | (machine->cpu.bus.read(machine->cpu.bus.context, 0x00a13009) & 1));
+		value = (uint8_t) (value << 1 | (machine->cpu.bus.read(machine->cpu.bus.context, 0x00a1300b) & 1));
 	}
 	return value;
 }
@@ -643,7 +646,8 @@ static void test_t5740_mapper(void) {
 	memcpy(rom + 0x183, "T-5740", 6);
 	for (bank = 0; bank < 16; bank++) rom[bank * 0x80000 + 0x1234] = (uint8_t) bank;
 	rom[0x0100] = 0x5a;
-	rom[0x8100] = 0xa5;
+	rom[0x18100] = 0xa5;
+	rom[0x18101] = 0xc3;
 	karashi_md_init(&machine, rom, sizeof(rom));
 	assert(machine.mapper == KARASHI_MD_MAPPER_T5740);
 	assert(machine.eeprom_present && machine.eeprom_mapping == KARASHI_MD_EEPROM_SPI);
@@ -652,6 +656,8 @@ static void test_t5740_mapper(void) {
 	assert(machine.cpu.bus.read(machine.cpu.bus.context, 0x301234) == 6);
 	assert(machine.cpu.bus.read(machine.cpu.bus.context, 0x381234) == 7);
 	assert(machine.cpu.bus.read(machine.cpu.bus.context, 0x018100) == 0x5a);
+	assert(machine.cpu.bus.read16(machine.cpu.bus.context, 0x018100) == 0xa5c3);
+	assert(machine.vdp.dma_read(machine.vdp.dma_context, 0x018100) == 0xa5c3);
 	machine.cpu.bus.write(machine.cpu.bus.context, 0x00a13003, 0x0f);
 	machine.cpu.bus.write(machine.cpu.bus.context, 0x00a13005, 0x0e);
 	machine.cpu.bus.write16(machine.cpu.bus.context, 0x00a13006, 0x000d);
@@ -751,6 +757,62 @@ static void test_timing(void) {
 	assert(machine.audio_frames >= 964 && machine.audio_frames <= 966);
 }
 
+static void test_main_bus_timing(void) {
+	static struct karashi_md machine;
+	static uint8_t rom[0x400];
+	size_t position = 0;
+	uint64_t clocks;
+	uint64_t available;
+
+	put32(rom, &position, 0x00ffff00);
+	put32(rom, &position, 0x200);
+	position = 0x200;
+	put16(rom, &position, 0x5280); /* ADDQ.L #1,D0 (8 clocks) */
+	put16(rom, &position, 0x60fc); /* BRA.S back (10 clocks) */
+	karashi_md_init(&machine, rom, sizeof(rom));
+	karashi_md_run_frame(&machine);
+	clocks = machine.cpu.cycles;
+	available = clocks - (clocks / 128) * 2;
+	assert(available == (uint64_t) machine.cpu.d[0] * 18 - (machine.cpu.pc == 0x202 ? 10 : 0));
+
+	/* An ignored DD prefix must preserve the bank wait on LD A,($8200). */
+	memcpy(machine.z80_ram, (const uint8_t[]){0xdd, 0x3a, 0x00, 0x82}, 4);
+	machine.z80.cycles = 0;
+	karashi_z80_step(&machine.z80);
+	assert(machine.z80.af >> 8 == rom[0x200]);
+	assert(machine.z80.cycles == 4 + 13 + 3);
+	assert(machine.cpu.cycles == clocks + 8);
+
+	machine.cpu.stopped = true;
+	machine.z80_bank = 0x1fe;
+	machine.z80.bus.write(machine.z80.bus.context, 0x8000, 0x5a);
+	assert(machine.work_ram[0] == 0x5a && machine.z80.cycles == 23);
+	machine.z80.bus.read(machine.z80.bus.context, 0x8000);
+	machine.z80.bus.read(machine.z80.bus.context, 0x8000);
+	assert(machine.z80.cycles == 30 && machine.z80_wait_quarters == 0);
+	assert(machine.cpu.cycles == clocks + 8);
+}
+
+static void test_autovector_timing(void) {
+	static struct karashi_md machine;
+	static uint8_t rom[0x400];
+	size_t position = 0;
+	unsigned phase;
+
+	put32(rom, &position, 0x00ffff00);
+	put32(rom, &position, 0x200);
+	put32(rom, &(size_t){30 * 4}, 0x300);
+	karashi_md_init(&machine, rom, sizeof(rom));
+	for (phase = 0; phase < 10; phase++) {
+		machine.cpu.cycles = 100 + phase;
+		machine.cpu.sr = 0x2000;
+		karashi_m68k_set_irq(&machine.cpu, 6);
+		karashi_m68k_step(&machine.cpu);
+		assert(machine.cpu.pc == 0x300);
+		assert(machine.cpu.cycles == (phase ? 160u : 150u));
+	}
+}
+
 static void test_psg_write_timing(void) {
 	static struct karashi_md machine;
 	static uint8_t rom[0x400];
@@ -814,12 +876,45 @@ static void test_tmss(void) {
 	assert(machine.cpu.pc == 0x304 && machine.cpu.a[7] == 0x00fffe00);
 }
 
+static void test_paprium(void) {
+	static struct karashi_md md;
+	static uint8_t rom[0x800000];
+	static const uint8_t packed[] = {0x80, 2, 0xaa, 0xbb, 0x84, 2, 0};
+	memcpy(rom + 0x183, "T-574120-00", 11);
+	put16(rom, &(size_t){0x18e}, 0xa5fb);
+	memcpy(rom + 0x700000, packed, sizeof(packed));
+	karashi_md_init(&md, rom, sizeof(rom));
+	assert(md.mapper == KARASHI_MD_MAPPER_PAPRIUM && md.sram_size == 4 * 0x780);
+	struct karashi_m68k_bus *bus = &md.cpu.bus;
+	assert(bus->read16(&md, 0x1560) == 0x4ef9 && bus->read16(&md, 0x700000) == 0x8002);
+	bus->write16(&md, 0x1e10, 0x1000);
+	bus->write16(&md, 0x1e12, 0x70);
+	bus->write16(&md, 0x1e14, 0);
+	bus->write16(&md, 0x1fea, 0xda02);
+	assert(md.paprium.remaining == 6);
+	assert(bus->read16(&md, 0xc000) == 0xaabb && bus->read16(&md, 0xc004) == 0xaabb);
+	assert(md.paprium.remaining == 0);
+
+	bus->write16(&md, 0x1e10, 0xbeef);
+	bus->write16(&md, 0x1e12, 0xc000);
+	for (unsigned bank = 1; bank <= 4; bank++) bus->write16(&md, 0x1fea, 0xe000 + bank);
+	bus->write16(&md, 0x1fea, 0x8400);
+	assert(md.paprium.restart_pending);
+	karashi_md_reset(&md);
+	assert(md.sram[0] == 0xaa && md.sram[3 * 0x780 + 1] == 0xbb);
+	bus->write16(&md, 0x1fea, 0x8400);
+	assert(!md.paprium.restart_pending);
+}
+
 int main(void) {
 	test_tmss();
 	test_regions();
 	test_timing();
+	test_main_bus_timing();
+	test_autovector_timing();
 	test_psg_write_timing();
 	test_ports();
+	test_paprium();
 	test_eeprom_cartridge_detection();
 	test_header_eeprom();
 	test_product_eeprom_families();

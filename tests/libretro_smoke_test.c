@@ -265,7 +265,7 @@ int main(int argc, char **argv) {
 	memset(&info, 0, sizeof(info));
 	get_system_info(&info);
 	assert(info.library_name && strcmp(info.library_name, "Karashi") == 0);
-	assert(info.library_version && strcmp(info.library_version, "1.0.8") == 0);
+	assert(info.library_version && strcmp(info.library_version, "1.0.9") == 0);
 	assert(info.valid_extensions && strstr(info.valid_extensions, "sg"));
 
 	memset(&game, 0, sizeof(game));
@@ -329,6 +329,9 @@ int main(int argc, char **argv) {
 	run();
 	assert(video_hash == expected_video_hash);
 	assert(audio_hash == expected_audio_hash);
+	state[4]--;
+	assert(!unserialize(state, state_size));
+	state[4]++;
 	state[state_size - 1] ^= 0x01;
 	assert(!unserialize(state, state_size));
 	free(state);
@@ -420,6 +423,7 @@ int main(int argc, char **argv) {
 	set_controller_port_device(3, RETRO_DEVICE_JOYPAD);
 	get_system_av_info(&av_info);
 	assert(av_info.geometry.base_width == 320);
+	assert(av_info.geometry.aspect_ratio > 1.306f && av_info.geometry.aspect_ratio < 1.307f);
 	assert(av_info.geometry.base_height == 224);
 	assert(av_info.timing.fps > 59.9 && av_info.timing.fps < 60.1);
 	expected_width = 256;

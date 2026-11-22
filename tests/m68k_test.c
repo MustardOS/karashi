@@ -516,6 +516,30 @@ static void test_chk_timing_paths(void) {
 	assert(karashi_m68k_step(&cpu) == 10);
 }
 
+static void test_stop_scheduling(void) {
+	struct karashi_m68k cpu;
+	struct fixture fixture;
+
+	initialise(&cpu, &fixture);
+	put16(&fixture, 0x100, 0x4e72); /* STOP with interrupt mask 4 */
+	put16(&fixture, 0x102, 0x2400);
+	put32(&fixture, (24 + 6) * 4, 0x200);
+	karashi_m68k_set_irq(&cpu, 4);
+	karashi_m68k_run(&cpu, 4);
+	assert(cpu.stopped && cpu.cycles == 4);
+	karashi_m68k_run(&cpu, 101);
+	assert(cpu.stopped && cpu.cycles == 104 && cpu.pc == 0x104);
+	karashi_m68k_set_irq(&cpu, 6);
+	karashi_m68k_run(&cpu, 105);
+	assert(!cpu.stopped && cpu.cycles == 148 && cpu.pc == 0x200);
+
+	/* STOP can unmask an IRQ that was pending before the instruction. */
+	karashi_m68k_reset(&cpu);
+	karashi_m68k_set_irq(&cpu, 6);
+	karashi_m68k_run(&cpu, 48);
+	assert(!cpu.stopped && cpu.cycles == 48 && cpu.pc == 0x200);
+}
+
 static void test_run_loop_skip(void) {
 	struct karashi_m68k cpu;
 	struct karashi_m68k reference;
@@ -563,6 +587,7 @@ int main(void) {
 	test_alignment_illegal_and_state();
 	test_prefetch_and_address_frame();
 	test_chk_timing_paths();
+	test_stop_scheduling();
 	test_run_loop_skip();
 	puts("68000 reset, effective addresses, arithmetic, control flow and state: pass");
 	return 0;

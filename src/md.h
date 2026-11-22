@@ -1,6 +1,7 @@
 #ifndef KARASHI_MD_H
 #define KARASHI_MD_H
 
+#include "paprium.h"
 #include "m68k.h"
 #include "mars.h"
 #include "eeprom.h"
@@ -58,7 +59,8 @@ enum karashi_md_mapper {
 	KARASHI_MD_MAPPER_STANDARD = 0,
 	KARASHI_MD_MAPPER_SSF2,
 	KARASHI_MD_MAPPER_SF004,
-	KARASHI_MD_MAPPER_T5740
+	KARASHI_MD_MAPPER_T5740,
+	KARASHI_MD_MAPPER_PAPRIUM
 };
 
 enum karashi_md_eeprom_mapping {
@@ -89,6 +91,7 @@ struct karashi_md {
 	size_t rom_size;
 	uint8_t work_ram[KARASHI_MD_WORK_RAM_SIZE];
 	uint8_t z80_ram[KARASHI_MD_Z80_RAM_SIZE];
+	struct karashi_paprium paprium;
 	uint8_t sram[KARASHI_MD_SRAM_SIZE];
 	uint16_t controller[KARASHI_MD_CONTROLLER_PORTS];
 	uint8_t pad_type[KARASHI_MD_CONTROLLER_PORTS];
@@ -110,6 +113,7 @@ struct karashi_md {
 	uint32_t audio_clock;
 	uint32_t master_clock;
 	uint16_t z80_bank;
+	uint8_t z80_wait_quarters;
 	unsigned audio_frames;
 	unsigned fm_frames;
 	unsigned width;

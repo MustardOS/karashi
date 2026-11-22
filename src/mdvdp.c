@@ -530,7 +530,7 @@ static unsigned plane_cells(unsigned code) {
 }
 
 static void render_plane(
-	const struct karashi_mdvdp *vdp, unsigned plane, unsigned line, unsigned field_line, unsigned width,
+	const struct karashi_mdvdp *vdp, unsigned plane, unsigned scroll_y, unsigned line, unsigned field_line, unsigned start, unsigned end,
 	uint8_t *output
 ) {
 	unsigned cell_height = interlace_double(vdp) ? 16 : 8;
@@ -543,7 +543,8 @@ static void render_plane(
 	unsigned scroll_x;
 	unsigned fine;
 	int unit;
-	int units = (int) width / 16;
+	int first_unit;
+	int units = (int) end / 16;
 
 	if (plane_width == 32 && (vdp->registers[16] & 3) == 2) plane_height = 1;
 	else if (plane_width == 64 && plane_height == 128) plane_height = 64;
@@ -556,25 +557,52 @@ static void render_plane(
 	}
 	scroll_x = vram_word(vdp, scroll_table + scroll_line * 4 + plane * 2) & 0x03ff;
 	fine = scroll_x & 15;
-	for (unit = fine ? -1 : 0; unit < units; unit++) {
-		unsigned column = unit < 0 ? 0 : (unsigned) unit;
-		unsigned scroll_y = vdp->registers[11] & 0x04 ? vdp->vsram[(column * 2 + plane) % KARASHI_MD_VSRAM_SIZE]
-		                                            : vdp->vsram[plane];
-		unsigned y = (field_line + (scroll_y & (cell_height == 16 ? 0x7ff : 0x3ff))) & (plane_height * cell_height - 1);
-		unsigned row = y >> cell_shift;
-		int screen_x = unit * 16 + (int) fine;
-		unsigned plane_x = ((unsigned) (screen_x + 0x400) - scroll_x) & (plane_width * 8 - 1);
-		unsigned tile;
-		for (tile = 0; tile < 2; tile++) {
-			unsigned cell_x = ((plane_x >> 3) + tile) & (plane_width - 1);
-			uint16_t name = vram_word(vdp, table + (row * plane_width + cell_x) * 2);
-			draw_tile(vdp, name, y & (cell_height - 1), cell_height, output + LINE_MARGIN + screen_x + (int) tile * 8);
+	/* A scrolled tile pair can straddle the left edge of the visible span. */
+	first_unit = (int) start / 16 - (fine != 0);
+	if (!(vdp->registers[11] & 0x04)) {
+		unsigned y = (field_line + (scroll_y & (cell_height == 16 ? 0x7ff : 0x3ff)))
+		             & (plane_height * cell_height - 1);
+		unsigned row_address = table + (y >> cell_shift) * plane_width * 2;
+
+		for (unit = first_unit; unit < units; unit++) {
+			int screen_x = unit * 16 + (int) fine;
+			unsigned plane_x = ((unsigned) (screen_x + 0x400) - scroll_x) & (plane_width * 8 - 1);
+			unsigned tile;
+
+			for (tile = 0; tile < 2; tile++) {
+				unsigned cell_x = ((plane_x >> 3) + tile) & (plane_width - 1);
+				uint16_t name = vram_word(vdp, row_address + cell_x * 2);
+				draw_tile(
+					vdp, name, y & (cell_height - 1), cell_height,
+					output + LINE_MARGIN + screen_x + (int) tile * 8
+				);
+			}
+		}
+	} else {
+		for (unit = first_unit; unit < units; unit++) {
+			unsigned scroll_y = unit >= 0 ? vdp->vsram[(unsigned) unit * 2 + plane]
+			                    : h40(vdp) ? vdp->vsram[38] & vdp->vsram[39] : 0;
+			unsigned y = (field_line + (scroll_y & (cell_height == 16 ? 0x7ff : 0x3ff)))
+			             & (plane_height * cell_height - 1);
+			unsigned row_address = table + (y >> cell_shift) * plane_width * 2;
+			int screen_x = unit * 16 + (int) fine;
+			unsigned plane_x = ((unsigned) (screen_x + 0x400) - scroll_x) & (plane_width * 8 - 1);
+			unsigned tile;
+
+			for (tile = 0; tile < 2; tile++) {
+				unsigned cell_x = ((plane_x >> 3) + tile) & (plane_width - 1);
+				uint16_t name = vram_word(vdp, row_address + cell_x * 2);
+				draw_tile(
+					vdp, name, y & (cell_height - 1), cell_height,
+					output + LINE_MARGIN + screen_x + (int) tile * 8
+				);
+			}
 		}
 	}
 }
 
-static void render_window(
-	const struct karashi_mdvdp *vdp, unsigned line, unsigned field_line, unsigned width, uint8_t *output
+static void render_plane_a(
+	const struct karashi_mdvdp *vdp, unsigned line, unsigned field_line, unsigned width, unsigned scroll_y, uint8_t *output
 ) {
 	unsigned cell_height = interlace_double(vdp) ? 16 : 8;
 	unsigned vertical = (vdp->registers[18] & 0x1f) * 8;
@@ -590,10 +618,15 @@ static void render_window(
 	unsigned x;
 
 	if (down ? line < vertical : line >= vertical) {
-		if (right) start = horizontal;
-		else end = horizontal;
+		if (horizontal > width) horizontal = width;
+		if (right) {
+			start = horizontal;
+			if (start) render_plane(vdp, 0, scroll_y, line, field_line, 0, start, output);
+		} else {
+			end = horizontal;
+			if (end < width) render_plane(vdp, 0, scroll_y, line, field_line, end, width, output);
+		}
 	}
-	if (end > width) end = width;
 	for (x = start; x < end; x += 8) {
 		uint16_t name = vram_word(vdp, table + (row * table_width + (x >> 3)) * 2);
 		draw_tile(vdp, name, pixel_row, cell_height, output + LINE_MARGIN + x);
@@ -672,11 +705,11 @@ static void render_sprites(struct karashi_mdvdp *vdp, unsigned field_line, unsig
 }
 
 void karashi_mdvdp_render_line(struct karashi_mdvdp *vdp, unsigned line, karashi_pixel *output) {
-	karashi_mdvdp_render_line_mask(vdp, line, output, NULL);
+	karashi_mdvdp_render_line_mask(vdp, line, vdp->vsram, output, NULL);
 }
 
 void karashi_mdvdp_render_line_mask(
-	struct karashi_mdvdp *vdp, unsigned line, karashi_pixel *output, uint8_t *backdrop
+	struct karashi_mdvdp *vdp, unsigned line, const uint16_t vertical_scroll[2], karashi_pixel *output, uint8_t *backdrop
 ) {
 	uint8_t plane_a[KARASHI_MD_WIDTH + LINE_MARGIN * 2];
 	uint8_t plane_b[KARASHI_MD_WIDTH + LINE_MARGIN * 2];
@@ -697,9 +730,8 @@ void karashi_mdvdp_render_line_mask(
 		return;
 	}
 	memset(sprites, 0, sizeof(sprites));
-	render_plane(vdp, 1, line, field_line, width, plane_b);
-	render_plane(vdp, 0, line, field_line, width, plane_a);
-	render_window(vdp, line, field_line, width, plane_a);
+	render_plane(vdp, 1, vertical_scroll[1], line, field_line, 0, width, plane_b);
+	render_plane_a(vdp, line, field_line, width, vertical_scroll[0], plane_a);
 	render_sprites(vdp, field_line, width, sprites);
 	if (!shade) {
 		const uint64_t ones = UINT64_C(0x0101010101010101);

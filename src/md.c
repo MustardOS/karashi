@@ -2,6 +2,9 @@
 
 #include <string.h>
 
+#define M68K_REFRESH_PERIOD 128u
+#define M68K_REFRESH_WAIT 2u
+
 #define PAD_TIMEOUT_MCLK 80540
 #define PAD_LATENCY_MCLK 1204
 
@@ -98,6 +101,7 @@ static uint8_t rom_byte(const struct karashi_md *machine, uint32_t address) {
 	uint32_t index;
 
 	if (machine->tmss_mapped && address < 0x400000) return machine->tmss[address % machine->tmss_size];
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && address < 0x10000) return machine->paprium.page[address];
 	if (sram_index(machine, address, &index)) return machine->sram[index];
 	if (machine->mapper == KARASHI_MD_MAPPER_SF004 && address < 0x200000) {
 		address = ((uint32_t) machine->rom_bank[0] << 18)
@@ -371,6 +375,7 @@ static void update_maps(struct karashi_md *machine) {
 		           && !(machine->sram_enabled && start + 0xffff >= machine->sram_start && start <= machine->sram_end)
 		           && !(machine->jcart_present && start >= 0x380000)
 		           && !(eeprom_read_active(machine, start));
+		if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && !machine->tmss_mapped && page && start < machine->rom_size) rom = true;
 		bus->read_map[page] = rom ? machine->rom + start : NULL;
 		bus->write_map[page] = NULL;
 	}
@@ -404,6 +409,10 @@ static uint8_t memory_read(void *context, uint32_t address) {
 	if (sram_index(machine, address, &sram_offset)) return machine->sram[sram_offset];
 	if (machine->mapper == KARASHI_MD_MAPPER_SF004 && address >= 0x200000 && address < 0x400000
 	    && !(machine->sram_enabled && address <= machine->sram_end)) return open_bus(machine, address);
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM) {
+		if (address == 0xa14101) return machine->paprium.control;
+		if (address < machine->rom_size) return rom_byte(machine, address);
+	}
 	if (address < 0x400000) return rom_byte(machine, address);
 	if (address >= 0xe00000) return machine->work_ram[address & 0xffff];
 	if (address >= 0xa00000 && address < 0xa10000) {
@@ -416,7 +425,7 @@ static uint8_t memory_read(void *context, uint32_t address) {
 		return (uint8_t) ((open_bus(machine, address) & 0xfe) | (machine->z80_bus_requested ? 0 : 1));
 	}
 	if ((address & 0xffff00) == 0xa11200) return open_bus(machine, address);
-	if (address == 0xa13009 && machine->eeprom_mapping == KARASHI_MD_EEPROM_SPI) {
+	if (address == 0xa1300b && machine->eeprom_mapping == KARASHI_MD_EEPROM_SPI) {
 		return (uint8_t) (karashi_spi_eeprom_read(&machine->spi_eeprom) ? 1 : 0);
 	}
 	if (vdp_address(address)) {
@@ -446,6 +455,13 @@ static void memory_write(void *context, uint32_t address, uint8_t value) {
 	struct karashi_md *machine = context;
 	uint32_t sram_offset;
 
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM) {
+		if (address == 0xa14101) machine->paprium.control = value;
+		if (address < 0x10000 && !machine->tmss_mapped) {
+			machine->paprium.page[address] = value;
+			return;
+		}
+	}
 	if (mars_access(machine, address)) {
 		karashi_mars_write8(&machine->mars, address, value);
 		return;
@@ -512,7 +528,7 @@ static void memory_write(void *context, uint32_t address, uint8_t value) {
 	else if (address == 0xa11100) bus_request(machine, (value & 1) != 0);
 	else if (address == 0xa11200) bus_reset(machine, (value & 1) == 0);
 	else if (address == 0xa130f1) {
-		if (machine->sram_present) {
+		if (machine->sram_present && machine->mapper != KARASHI_MD_MAPPER_PAPRIUM) {
 			if (machine->sram_start < machine->rom_size) machine->sram_enabled = (value & 1) != 0;
 			machine->sram_write_protected = (value & 2) != 0;
 		}
@@ -529,7 +545,10 @@ static void memory_write(void *context, uint32_t address, uint8_t value) {
 static uint16_t memory_read16(void *context, uint32_t address) {
 	struct karashi_md *machine = context;
 	uint32_t sram_offset;
+	uint32_t rom_address;
 
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && !machine->tmss_mapped && address < 0x10000)
+		return karashi_paprium_read(machine, address);
 	if (mars_access(machine, address)) return karashi_mars_read16(&machine->mars, address);
 
 	if (address >= 0xe00000) {
@@ -542,6 +561,13 @@ static uint16_t memory_read16(void *context, uint32_t address) {
 	    && (sram_index(machine, address, &sram_offset) || sram_index(machine, address + 1, &sram_offset))) {
 		uint8_t value = machine->sram[sram_offset];
 		return (uint16_t) ((uint16_t) value << 8 | value);
+	}
+	if (address < 0x400000 && machine->mapper == KARASHI_MD_MAPPER_T5740 && !machine->tmss_mapped) {
+		rom_address = (uint32_t) machine->rom_bank[address >> 19] << 19 | (address & 0x7ffff);
+		if ((size_t) rom_address + 1 < machine->rom_size) {
+			return (uint16_t) ((uint16_t) machine->rom[rom_address] << 8 | machine->rom[rom_address + 1]);
+		}
+		return 0xffff;
 	}
 	if (address + 1 < machine->rom_size && machine->mapper == KARASHI_MD_MAPPER_STANDARD && !machine->tmss_mapped
 	    && !(machine->sram_enabled && address >= machine->sram_start)) {
@@ -559,6 +585,10 @@ static void memory_write16(void *context, uint32_t address, uint16_t value) {
 		return;
 	}
 
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && address == 0x1fea && !machine->tmss_mapped) {
+		karashi_paprium_command(machine, value);
+		return;
+	}
 	if (address >= 0xe00000) {
 		address &= 0xfffe;
 		machine->work_ram[address] = (uint8_t) (value >> 8);
@@ -587,6 +617,8 @@ static void memory_write16(void *context, uint32_t address, uint16_t value) {
 static void acknowledge(void *context, unsigned level) {
 	struct karashi_md *machine = context;
 
+	/* Autovector acknowledge waits for the 68000 E clock (CPU clock / 10). */
+	machine->cpu.cycles += 6 + (10 - machine->cpu.cycles % 10) % 10;
 	karashi_mdvdp_acknowledge(&machine->vdp, level);
 	update_irq(machine);
 }
@@ -594,6 +626,7 @@ static void acknowledge(void *context, unsigned level) {
 static uint16_t dma_read(void *context, uint32_t address) {
 	struct karashi_md *machine = context;
 	uint32_t sram_offset;
+	uint32_t rom_address;
 
 	address &= 0xfffffe;
 	if (address >= 0xe00000) {
@@ -605,10 +638,27 @@ static uint16_t dma_read(void *context, uint32_t address) {
 		uint8_t value = machine->sram[sram_offset];
 		return (uint16_t) ((uint16_t) value << 8 | value);
 	}
+	if (address < 0x400000 && machine->mapper == KARASHI_MD_MAPPER_T5740 && !machine->tmss_mapped) {
+		rom_address = (uint32_t) machine->rom_bank[address >> 19] << 19 | (address & 0x7ffff);
+		if ((size_t) rom_address + 1 < machine->rom_size) {
+			return (uint16_t) ((uint16_t) machine->rom[rom_address] << 8 | machine->rom[rom_address + 1]);
+		}
+		return 0xffff;
+	}
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && address < machine->rom_size)
+		return memory_read16(machine, address);
 	if (sram_window(machine, address) || address < 0x400000) {
 		return (uint16_t) ((uint16_t) rom_byte(machine, address) << 8 | rom_byte(machine, address + 1));
 	}
 	return 0xffff;
+}
+
+static uint32_t z80_bank_address(struct karashi_md *machine, uint16_t address) {
+	/* Each bank access costs 3.25 Z80 clocks on average. */
+	machine->z80_wait_quarters = (machine->z80_wait_quarters + 1) & 3;
+	machine->z80.cycles += 3 + (machine->z80_wait_quarters == 0);
+	if (!machine->cpu.stopped) machine->cpu.cycles += 8;
+	return (uint32_t) machine->z80_bank << 15 | (address & 0x7fff);
 }
 
 static uint8_t z80_read(void *context, uint16_t address) {
@@ -616,7 +666,7 @@ static uint8_t z80_read(void *context, uint16_t address) {
 	uint32_t target;
 
 	if (address < 0x8000) return sound_read(machine, address, machine->z80.cycles * 15);
-	target = (uint32_t) machine->z80_bank << 15 | (address & 0x7fff);
+	target = z80_bank_address(machine, address);
 	return memory_read(machine, target);
 }
 
@@ -628,7 +678,7 @@ static void z80_write(void *context, uint16_t address, uint8_t value) {
 		sound_write(machine, address, value, machine->z80.cycles * 15);
 		return;
 	}
-	target = (uint32_t) machine->z80_bank << 15 | (address & 0x7fff);
+	target = z80_bank_address(machine, address);
 	memory_write(machine, target, value);
 }
 
@@ -743,6 +793,9 @@ static void detect_cartridge(struct karashi_md *machine) {
 	if (machine->rom_size >= 0x18a && memcmp(machine->rom + 0x183, "T-5740", 6) == 0) {
 		machine->mapper = KARASHI_MD_MAPPER_T5740;
 	}
+	if (machine->rom_size == 0x800000 && !memcmp(machine->rom + 0x183, "T-574120-00", 11)
+	    && machine->rom[0x18e] == 0xa5 && machine->rom[0x18f] == 0xfb)
+		machine->mapper = KARASHI_MD_MAPPER_PAPRIUM;
 	machine->sf004_linear = false;
 	machine->jcart_present = false;
 	machine->eeprom_present = false;
@@ -943,6 +996,12 @@ void karashi_md_reset(struct karashi_md *machine) {
 	memset(machine->tmss_key, 0, sizeof(machine->tmss_key));
 	machine->master_clock = machine->pal ? KARASHI_MD_PAL_CLOCK : KARASHI_MD_NTSC_CLOCK;
 	detect_cartridge(machine);
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM) {
+		karashi_paprium_reset(machine);
+		machine->sram_present = machine->sram_persistent = true;
+		machine->sram_enabled = false;
+		machine->sram_size = 4 * 0x780;
+	}
 	memset(machine->work_ram, 0, sizeof(machine->work_ram));
 	memset(machine->z80_ram, 0, sizeof(machine->z80_ram));
 	memset(machine->io_data, 0, sizeof(machine->io_data));
@@ -959,6 +1018,7 @@ void karashi_md_reset(struct karashi_md *machine) {
 	machine->audio_frames = 0;
 	machine->fm_frames = 0;
 	machine->z80_bank = 0;
+	machine->z80_wait_quarters = 0;
 	machine->jcart_th = true;
 	machine->width = KARASHI_MD_WIDTH;
 	machine->height = KARASHI_MD_HEIGHT;
@@ -1005,13 +1065,25 @@ double karashi_md_frame_rate(const struct karashi_md *machine) {
 	return (double) machine->master_clock / ((double) KARASHI_MD_LINE_MCLK * (machine->pal ? 313 : 262));
 }
 
+static void run_main_cpu(struct karashi_m68k *cpu, uint64_t limit) {
+	while (cpu->cycles < limit) {
+		/* The main bus takes two CPU clocks at each 128-clock refresh boundary. */
+		uint64_t refresh = cpu->cycles - cpu->cycles % M68K_REFRESH_PERIOD + M68K_REFRESH_PERIOD;
+		uint64_t end = refresh < limit ? refresh : limit;
+		karashi_m68k_run(cpu, end);
+		if (!cpu->stopped && cpu->fault == KARASHI_M68K_FAULT_NONE && cpu->cycles >= refresh) {
+			cpu->cycles += M68K_REFRESH_WAIT;
+		}
+	}
+}
+
 static void run_cpu(struct karashi_md *machine, uint64_t target) {
 	while (machine->cpu.cycles * 7 < target) {
 		uint64_t slice = target;
 		if (machine->mars_present && machine->cpu.cycles * 7 + KARASHI_MD_MARS_SLICE < target) {
 			slice = machine->cpu.cycles * 7 + KARASHI_MD_MARS_SLICE;
 		}
-		if (machine->cpu.cycles * 7 < slice) karashi_m68k_run(&machine->cpu, (slice + 6) / 7);
+		run_main_cpu(&machine->cpu, (slice + 6) / 7);
 		if (machine->mars_present) karashi_mars_run(&machine->mars, machine->cpu.cycles * 7);
 	}
 	if (machine->mars_present) karashi_mars_run(&machine->mars, target);
@@ -1049,8 +1121,11 @@ static void mix_audio(struct karashi_md *machine) {
 }
 
 void karashi_md_run_frame(struct karashi_md *machine) {
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM && machine->paprium.restart_pending)
+		karashi_md_reset(machine);
 	unsigned lines = machine->vdp.lines;
 	unsigned height = karashi_mdvdp_height(&machine->vdp);
+	uint16_t vertical_scroll[2] = {machine->vdp.vsram[0], machine->vdp.vsram[1]};
 	unsigned line;
 
 	machine->audio_frames = 0;
@@ -1060,6 +1135,15 @@ void karashi_md_run_frame(struct karashi_md *machine) {
 
 		karashi_mdvdp_begin_line(&machine->vdp, line);
 		if (machine->mars_present) karashi_mars_begin_line(&machine->mars, line, height, start);
+		if (line < height) {
+			karashi_pixel *row = machine->video + line * KARASHI_MD_WIDTH;
+			/* Include early display-enable writes when leaving forced blank. */
+			if (!(machine->vdp.registers[1] & 0x40)) run_cpu(machine, start + KARASHI_MD_DISPLAY_SAMPLE_MCLK);
+			karashi_mdvdp_render_line_mask(
+				&machine->vdp, line, vertical_scroll, row, machine->mars_present ? machine->backdrop : NULL
+			);
+			if (machine->mars_present) karashi_mars_render_line(&machine->mars, line, row, machine->backdrop);
+		}
 		if (line == height) karashi_z80_irq(&machine->z80, true);
 		else if (line == height + 1) karashi_z80_irq(&machine->z80, false);
 		if (line == height) {
@@ -1068,15 +1152,12 @@ void karashi_md_run_frame(struct karashi_md *machine) {
 		}
 		update_irq(machine);
 		run_cpu(machine, start + KARASHI_MD_HBLANK_MCLK);
+		/* Full-plane scroll is fetched before the raster handler updates VSRAM for a later line. */
+		memcpy(vertical_scroll, machine->vdp.vsram, sizeof(vertical_scroll));
 		karashi_mdvdp_end_active(&machine->vdp);
 		if (machine->mars_present) karashi_mars_end_active(&machine->mars);
 		update_irq(machine);
 		run_cpu(machine, start + KARASHI_MD_LINE_MCLK);
-		if (line < height && machine->mars_present) {
-			karashi_pixel *row = machine->video + line * KARASHI_MD_WIDTH;
-			karashi_mdvdp_render_line_mask(&machine->vdp, line, row, machine->backdrop);
-			karashi_mars_render_line(&machine->mars, line, row, machine->backdrop);
-		} else if (line < height) karashi_mdvdp_render_line(&machine->vdp, line, machine->video + line * KARASHI_MD_WIDTH);
 		z80_sync(machine, start + KARASHI_MD_LINE_MCLK);
 		machine->line_start = start + KARASHI_MD_LINE_MCLK;
 	}
@@ -1099,6 +1180,7 @@ bool karashi_md_save(const struct karashi_md *machine, struct karashi_state_writ
 	karashi_ym2612_save(&machine->ym, writer);
 	karashi_eeprom_save(&machine->eeprom, writer);
 	karashi_spi_eeprom_save(&machine->spi_eeprom, writer);
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM) karashi_paprium_save(machine, writer);
 	karashi_state_write_bytes(writer, machine->work_ram, sizeof(machine->work_ram));
 	karashi_state_write_bytes(writer, machine->z80_ram, sizeof(machine->z80_ram));
 	karashi_state_write_bytes(writer, machine->sram, sizeof(machine->sram));
@@ -1122,7 +1204,8 @@ bool karashi_md_save(const struct karashi_md *machine, struct karashi_state_writ
 	karashi_state_write_u64(writer, machine->fm_clock);
 	karashi_state_write_u64(writer, machine->psg_clock);
 	karashi_state_write_u32(writer, machine->audio_clock);
-	karashi_state_write_u16(writer, machine->z80_bank);
+	/* Older states stored just the nine bank bits, giving a zero wait remainder. */
+	karashi_state_write_u16(writer, machine->z80_bank | (machine->z80_wait_quarters << 9));
 	karashi_state_write_bool(writer, machine->sram_enabled);
 	karashi_state_write_bool(writer, machine->sram_write_protected);
 	karashi_state_write_bool(writer, machine->eeprom_read_enabled);
@@ -1139,6 +1222,7 @@ bool karashi_md_load(struct karashi_md *machine, struct karashi_state_reader *re
 	              && karashi_spi_eeprom_load(&machine->spi_eeprom, reader);
 	unsigned index;
 
+	if (machine->mapper == KARASHI_MD_MAPPER_PAPRIUM) loaded = karashi_paprium_load(machine, reader) && loaded;
 	loaded = karashi_state_read_bytes(reader, machine->work_ram, sizeof(machine->work_ram)) && loaded;
 	loaded = karashi_state_read_bytes(reader, machine->z80_ram, sizeof(machine->z80_ram)) && loaded;
 	loaded = karashi_state_read_bytes(reader, machine->sram, sizeof(machine->sram)) && loaded;
@@ -1172,6 +1256,7 @@ bool karashi_md_load(struct karashi_md *machine, struct karashi_state_reader *re
 	loaded = karashi_state_read_bool(reader, &machine->z80_reset_asserted) && loaded;
 	if (!loaded) return false;
 	machine->audio_clock %= machine->master_clock;
+	machine->z80_wait_quarters = (machine->z80_bank >> 9) & 3;
 	machine->z80_bank &= 0x1ff;
 	for (index = 0; index < KARASHI_MD_CONTROLLER_PORTS; index++) machine->pad_phase[index] &= 7;
 	for (index = 0; index < 8; index++) {

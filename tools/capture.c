@@ -66,6 +66,9 @@ typedef void (*set_poll_t)(retro_input_poll_t);
 typedef void (*set_state_t)(retro_input_state_t);
 typedef void (*void_t)(void);
 typedef bool (*load_t)(const struct retro_game_info *);
+typedef bool (*serialize_t)(void *, size_t);
+typedef bool (*unserialize_t)(const void *, size_t);
+typedef size_t (*serialize_size_t)(void);
 #define SYM(type, name) type name = (type) dlsym(library, "retro_" #name)
 
 /* cap CORE ROM OUT.raw AUDIO.raw|- FRAME... : writes width,height,pixels per captured frame */
@@ -81,6 +84,7 @@ int main(int argc, char **argv) {
 		SYM(set_environment_t, set_environment); SYM(set_video_t, set_video_refresh); SYM(set_audio_t, set_audio_sample);
 		SYM(set_batch_t, set_audio_sample_batch); SYM(set_poll_t, set_input_poll); SYM(set_state_t, set_input_state);
 		SYM(void_t, init); SYM(load_t, load_game); SYM(void_t, run);
+		SYM(serialize_t, serialize); SYM(serialize_size_t, serialize_size); SYM(unserialize_t, unserialize);
 		file = fopen(argv[2], "rb");
 		if (!file) return 3;
 		fseek(file, 0, SEEK_END); size = ftell(file); rewind(file);
@@ -94,6 +98,22 @@ int main(int argc, char **argv) {
 		init();
 		game.path = argv[2]; game.data = data; game.size = (size_t) size;
 		if (!load_game(&game)) { puts("load failed"); return 4; }
+		if (getenv("KARASHI_STATE")) {
+			uint8_t *state;
+			size_t state_size;
+			int okay;
+			file = fopen(getenv("KARASHI_STATE"), "rb");
+			state_size = serialize_size();
+			state = malloc(state_size);
+			okay = file && state && fread(state, 1, state_size, file) == state_size && fgetc(file) == EOF
+			       && unserialize(state, state_size);
+			if (file) fclose(file);
+			free(state);
+			if (!okay) {
+				fputs("state load failed\n", stderr);
+				return 5;
+			}
+		}
 		for (frame_number = 0; next < argc; frame_number++) {
 			run();
 			if (frame_number + 1 == (unsigned) atoi(argv[next])) {
@@ -101,6 +121,22 @@ int main(int argc, char **argv) {
 				fwrite(header, 4, 2, out);
 				fwrite(frame, sizeof frame[0], (size_t) frame_width * frame_height, out);
 				next++;
+			}
+		}
+		if (getenv("KARASHI_SAVE_STATE")) {
+			uint8_t *state;
+			size_t state_size = serialize_size();
+			int okay;
+
+			state = malloc(state_size);
+			file = fopen(getenv("KARASHI_SAVE_STATE"), "wb");
+			okay = state && file && serialize(state, state_size)
+			       && fwrite(state, 1, state_size, file) == state_size && fflush(file) == 0;
+			if (file && fclose(file) != 0) okay = 0;
+			free(state);
+			if (!okay) {
+				fputs("state save failed\n", stderr);
+				return 6;
 			}
 		}
 		fclose(out);

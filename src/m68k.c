@@ -98,6 +98,15 @@ static uint16_t read16(struct karashi_m68k *cpu, uint32_t address) {
 	return read16_access(cpu, address, false);
 }
 
+static uint16_t read16_instruction_aligned(struct karashi_m68k *cpu, uint32_t address) {
+	const uint8_t *page = cpu->bus.read_map[address >> 16];
+
+	if (page) return (uint16_t) ((uint16_t) page[address & 0xffff] << 8 | page[(address & 0xffff) + 1]);
+	cpu->bus_events++;
+	if (cpu->bus.read16) return cpu->bus.read16(cpu->bus.context, address);
+	return (uint16_t) ((uint16_t) read8(cpu, address) << 8 | read8(cpu, address + 1));
+}
+
 static uint32_t read32(struct karashi_m68k *cpu, uint32_t address) {
 	uint32_t high = read16(cpu, address);
 	return high << 16 | read16(cpu, address + 2);
@@ -143,16 +152,18 @@ static void fill_prefetch(struct karashi_m68k *cpu) {
 }
 
 static uint16_t fetch16(struct karashi_m68k *cpu) {
+	uint32_t address;
 	uint16_t value;
 
-	fill_prefetch(cpu);
+	if (cpu->prefetch_count < 2 || cpu->prefetch_address != cpu->pc) fill_prefetch(cpu);
 	if (cpu->address_error) return 0;
 	value = cpu->prefetch[0];
 	cpu->prefetch[0] = cpu->prefetch[1];
 	cpu->prefetch_count--;
 	cpu->prefetch_address = (cpu->prefetch_address + 2) & ADDRESS_MASK;
 	cpu->pc = (cpu->pc + 2) & ADDRESS_MASK;
-	fill_prefetch(cpu);
+	address = (cpu->prefetch_address + cpu->prefetch_count * 2) & ADDRESS_MASK;
+	cpu->prefetch[cpu->prefetch_count++] = read16_instruction_aligned(cpu, address);
 	return value;
 }
 
@@ -1427,13 +1438,17 @@ void karashi_m68k_reset(struct karashi_m68k *cpu) {
 	cpu->prefetch_count = 0;
 }
 
+static bool interrupt_pending(const struct karashi_m68k *cpu) {
+	return cpu->irq_level && (cpu->irq_level > ((cpu->sr >> 8) & 7) || cpu->irq_level == 7);
+}
+
 unsigned karashi_m68k_step(struct karashi_m68k *cpu) {
 	uint16_t opcode;
 	unsigned cycles;
 	bool trace;
 
 	if (cpu->fault != KARASHI_M68K_FAULT_NONE) return 0;
-	if (cpu->irq_level && (cpu->irq_level > ((cpu->sr >> 8) & 7) || cpu->irq_level == 7)) {
+	if (interrupt_pending(cpu)) {
 		cycles = take_interrupt(cpu, cpu->irq_level);
 		if (cpu->address_error) cycles += take_address_error(cpu);
 		fill_prefetch(cpu);
@@ -1483,7 +1498,7 @@ unsigned karashi_m68k_step(struct karashi_m68k *cpu) {
 	if (cpu->pc & 1) address_fault(cpu, cpu->pc, false, true);
 	if (cpu->address_error) cycles = take_address_error(cpu);
 	else cpu->trace_pending = trace;
-	if (!cpu->stopped) fill_prefetch(cpu);
+	if (!cpu->stopped && (cpu->prefetch_count < 2 || cpu->prefetch_address != cpu->pc)) fill_prefetch(cpu);
 	cpu->cycles += cycles;
 	return cycles;
 }
@@ -1535,6 +1550,13 @@ static void skip_loop(struct karashi_m68k *cpu, uint32_t start, uint64_t limit) 
 
 void karashi_m68k_run(struct karashi_m68k *cpu, uint64_t limit) {
 	cpu->loop_valid = false;
+	if (cpu->stopped && !cpu->trace_pending && cpu->fault == KARASHI_M68K_FAULT_NONE
+	    && !interrupt_pending(cpu) && cpu->cycles < limit) {
+		/* STOP idles in four-cycle steps until the scheduler can change the IRQ level. */
+		uint64_t remaining = limit - cpu->cycles;
+		cpu->cycles += remaining + ((-remaining) & 3);
+		return;
+	}
 	while (cpu->cycles < limit) {
 		uint32_t start = cpu->pc;
 		if (!karashi_m68k_step(cpu)) {

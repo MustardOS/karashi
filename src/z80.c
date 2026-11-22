@@ -551,7 +551,6 @@ static unsigned execute_index_cb(struct karashi_z80 *cpu, uint16_t address) {
 }
 
 static unsigned execute_prefetched(struct karashi_z80 *cpu, uint8_t opcode) {
-	uint64_t cycles_before = cpu->cycles;
 	unsigned cycles;
 
 	cpu->prefetched_opcode = opcode;
@@ -559,7 +558,8 @@ static unsigned execute_prefetched(struct karashi_z80 *cpu, uint8_t opcode) {
 	cpu->prefix_active = true;
 	cycles = karashi_z80_step(cpu);
 	cpu->prefix_active = false;
-	cpu->cycles = cycles_before;
+	/* The outer step charges the opcode. Keep any waits added by the bus. */
+	cpu->cycles -= cycles;
 	if (cpu->ei_delay) cpu->ei_delay++;
 	return cycles + 4;
 }

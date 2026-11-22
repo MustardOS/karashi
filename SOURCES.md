@@ -72,8 +72,13 @@ Source assisted Mega Drive VDP analysis:
 - Genesis Plus GX revision `2499cd3e3d1d8b7d0130d8b2825adb4cc608b2c0`, particularly `core/vdp_ctrl.c` and `core/vdp_render.c`.
 - The same Genesis Plus GX revision in `core/genesis.c`, `core/mem68k.c` and `core/sound/sound.c`, plus PicoDrive `pico/memory.c`, was used to compare Z80 bus ownership, open-bus reads and the 32-cycle YM2612 data-write busy interval.
 - SEGA, *Genesis Software Manual*, revision 02/20/92, page 24, documents the four-word FIFO, active-scan limits, byte-wide VRAM access, word-wide CRAM/VSRAM access and maximum CPU wait.
-- The comparison confirmed the FIFO access phase used by two independent implementations, H32/H40 access-rate differences, immediate visibility for ordinary memory-to-VDP DMA, per-line horizontal-scroll masking and four-bit fine horizontal scrolling.
+- The comparison confirmed the FIFO access phase used by two independent implementations, H32/H40 access-rate differences, immediate visibility for ordinary memory-to-VDP DMA, per-line horizontal-scroll masking, four-bit fine horizontal scrolling and the H32/H40 partial-column vertical-scroll rule.
 - Karashi's implementation and tests remain independently written. No upstream implementation code or comments were imported; hardware timing facts were re-expressed after cross-validation.
+
+Mega Drive main-bus timing:
+- [Kabuto’s hardware measurements](https://www.plutiedev.com/mirror/kabuto-hardware-notes) describe a two-clock delay per 128 main CPU clocks and contention from Z80 bank accesses. Karashi models refresh at instruction boundaries and accumulates fractional Z80 arbitration waits.
+- PicoDrive’s `pico/memory.c` and `pico/pico_cmn.c` model bank contention as 3.25 Z80 clocks and eight 68000 clocks per access. The two cores give different 68000 throughput under sustained Z80 cartridge reads.
+- Genesis Plus GX’s `core/m68k/m68kcpu.h`, `core/m68k/m68kcpu.c` and `core/memz80.c` were used to cross-check E-clock autovector alignment, refresh and Z80 bank waits against observed counter rates.
 
 Source-assisted 32X performance analysis
 - PicoDrive revision `ec68ce858330cb1f90ece789f2191d82b5bec833`, particularly `cpu/sh2/compiler.c`, `pico/32x/32x.c`, `pico/32x/memory.c`, `pico/32x/draw.c` and `pico/32x/pwm.c`.
@@ -86,7 +91,8 @@ Source-assisted Mega Drive serial EEPROM analysis:
 - BlastEm revision `ec73825ece2a134beb7825a5fd6fd21a398ff12e`, particularly `rom.db`;
 - Krikzz, *Serial EEPROM emulation*: <https://krikzz.com/pub/support/everdrive-md/v2/gen_eeprom.pdf>.
 - T-5740 and SPI analysis used Genesis Plus GX revision `2499cd3e3d1d8b7d0130d8b2825adb4cc608b2c0`, particularly `core/cart_hw/md_cart.c` and `core/cart_hw/eeprom_spi.c`.
-- Referenced the three switchable 512 KiB pages, the startup mirror at byte reads from `0x0181xx`, the serial register at `0xA13009`, the four signal bits and a 64 KiB 25xx/95xx device with 128-byte pages.
+- Referenced the three switchable 512 KiB pages, the startup mirror at byte reads from `0x0181xx`, the SPI line-write register at `0xA13009` and data-read register at `0xA1300B`, the four signal bits and a 64 KiB 25xx/95xx device with 128-byte pages.
+- The T-5740 start-up mirror is installed on the byte-read path; normal word and DMA reads retain the selected 512 KiB ROM-bank mapping.
 
 J-Cart analysis:
 - Genesis Plus GX revision, particularly `core/input_hw/gamepad.c` and `core/cart_hw/eeprom_i2c.c`.

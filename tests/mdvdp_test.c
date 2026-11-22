@@ -88,6 +88,7 @@ static void test_planes_and_priority(void) {
 static void test_scroll_and_window(void) {
 	static struct karashi_mdvdp vdp;
 	karashi_pixel line[KARASHI_MD_WIDTH];
+	unsigned column;
 
 	setup(&vdp);
 	name(&vdp, 0xc000, 0x0001);
@@ -98,6 +99,8 @@ static void test_scroll_and_window(void) {
 	karashi_mdvdp_write_data(&vdp, 8);
 	karashi_mdvdp_render_line(&vdp, 0, line);
 	assert(line[4] == BLACK);
+	karashi_mdvdp_render_line_mask(&vdp, 0, (const uint16_t[2]){0, 0}, line, NULL);
+	assert(line[4] == RED && vdp.vsram[0] == 8);
 	karashi_mdvdp_render_line(&vdp, 248, line);
 	assert(line[4] == RED);
 	command(&vdp, 5, 0);
@@ -113,6 +116,32 @@ static void test_scroll_and_window(void) {
 	assert(line[0] == BLUE);
 	karashi_mdvdp_render_line(&vdp, 8, line);
 	assert(line[0] == BLACK);
+
+	setup(&vdp);
+	for (column = 0; column < 64; column++) {
+		name(&vdp, 0xc000 + column * 2, 0x0001);
+		name(&vdp, 0xc080 + column * 2, 0x0002);
+	}
+	name(&vdp, 0xfc00, 4);
+	karashi_mdvdp_write_control(&vdp, 0x8b04);
+	vdp.vsram[0] = 8;
+	vdp.vsram[38] = 0;
+	vdp.vsram[39] = 0;
+	karashi_mdvdp_render_line(&vdp, 0, line);
+	assert(line[0] == RED && line[3] == RED && line[4] == GREEN);
+	/* Fine scroll carries column zero across the window edge at x=16. */
+	karashi_mdvdp_write_control(&vdp, 0x9101);
+	karashi_mdvdp_render_line(&vdp, 0, line);
+	assert(line[15] == BLACK && line[16] == GREEN && line[19] == GREEN && line[20] == RED);
+	karashi_mdvdp_write_control(&vdp, 0x9181);
+	karashi_mdvdp_render_line(&vdp, 0, line);
+	assert(line[15] == GREEN && line[16] == BLACK);
+	karashi_mdvdp_write_control(&vdp, 0x9100);
+	karashi_mdvdp_write_control(&vdp, 0x8c80);
+	vdp.vsram[38] = 8;
+	vdp.vsram[39] = 8;
+	karashi_mdvdp_render_line(&vdp, 0, line);
+	assert(line[0] == RED && line[3] == RED && line[4] == GREEN);
 }
 
 static void sprite(struct karashi_mdvdp *vdp, unsigned index, unsigned y, unsigned size, unsigned link,

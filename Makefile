@@ -22,7 +22,7 @@ HARDWARE := src/content.c src/scheduler.c src/state.c \
 	src/eeprom.c src/eeprom93.c src/spi_eeprom.c \
 	src/tms9918.c src/smsvdp.c src/mdvdp.c \
 	src/sn76489.c src/ym2413.c src/ym2612.c \
-	src/sg1000.c src/sms.c src/md.c
+	src/sg1000.c src/sms.c src/paprium.c src/md.c
 
 SOURCES := src/libretro.c $(HARDWARE)
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))

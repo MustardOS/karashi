@@ -14,6 +14,7 @@
 #define KARASHI_MD_CRAM_SIZE 64
 #define KARASHI_MD_VSRAM_SIZE 40
 #define KARASHI_MD_LINE_MCLK 3420
+#define KARASHI_MD_DISPLAY_SAMPLE_MCLK 480
 #define KARASHI_MD_HBLANK_MCLK 2640
 #define KARASHI_MD_VINT_DELAY_MCLK 112
 
@@ -78,7 +79,7 @@ unsigned karashi_mdvdp_width(const struct karashi_mdvdp *vdp);
 unsigned karashi_mdvdp_height(const struct karashi_mdvdp *vdp);
 void karashi_mdvdp_render_line(struct karashi_mdvdp *vdp, unsigned line, karashi_pixel *output);
 void karashi_mdvdp_render_line_mask(
-	struct karashi_mdvdp *vdp, unsigned line, karashi_pixel *output, uint8_t *backdrop
+	struct karashi_mdvdp *vdp, unsigned line, const uint16_t vertical_scroll[2], karashi_pixel *output, uint8_t *backdrop
 );
 bool karashi_mdvdp_save(const struct karashi_mdvdp *vdp, struct karashi_state_writer *writer);
 bool karashi_mdvdp_load(struct karashi_mdvdp *vdp, struct karashi_state_reader *reader);

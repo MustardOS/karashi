@@ -15,7 +15,7 @@
 #define KARASHI_MAX_HEIGHT KARASHI_SMSVDP_MAX_HEIGHT
 #define KARASHI_SAMPLE_RATE KARASHI_SEGA8_SAMPLE_RATE
 #define KARASHI_AUDIO_FRAMES 800
-#define KARASHI_STATE_VERSION 19
+#define KARASHI_STATE_VERSION 20
 #define KARASHI_STATE_CAPACITY (1536 * 1024)
 #define KARASHI_COPIER_HEADER 512
 #define KARASHI_MARS_ROM_CAPACITY 0x400000
@@ -89,7 +89,8 @@ static uint8_t *cheat_byte(uint32_t address) {
 	if (!md_active() || address > 0xffffff) return NULL;
 	if (address >= 0xe00000) return &md.work_ram[address & 0xffff];
 	if (address >= 0xa00000 && address < 0xa02000) return &md.z80_ram[address & 0x1fff];
-	if (md.sram_present && address >= md.sram_start && address <= md.sram_end) {
+	if (md.mapper == KARASHI_MD_MAPPER_PAPRIUM && address < sizeof(md.paprium.page)) return &md.paprium.page[address];
+	if (md.mapper != KARASHI_MD_MAPPER_PAPRIUM && md.sram_present && address >= md.sram_start && address <= md.sram_end) {
 		uint32_t offset = address - md.sram_start;
 		if (md.sram_mode == KARASHI_MD_SRAM_EVEN && (address & 1)) return NULL;
 		if (md.sram_mode == KARASHI_MD_SRAM_ODD && !(address & 1)) return NULL;
@@ -656,7 +657,7 @@ void retro_deinit(void) {
 void retro_get_system_info(struct retro_system_info *info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "Karashi";
-	info->library_version = "1.0.8";
+	info->library_version = "1.0.9";
 	info->valid_extensions = "bin|gen|md|smd|32x|sms|gg|sg|sg1000|sc";
 	info->need_fullpath = false;
 	info->block_extract = false;
@@ -672,6 +673,12 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
 	info->geometry.max_width = mega_drive ? KARASHI_MD_WIDTH : KARASHI_WIDTH;
 	info->geometry.max_height = mega_drive ? KARASHI_MD_MAX_HEIGHT : KARASHI_MAX_HEIGHT;
 	info->geometry.aspect_ratio = game_gear ? 10.0f / 9.0f : 4.0f / 3.0f;
+	if (mega_drive && md.master_clock && video_height) {
+		double sample_rate = md.pal ? 14750000.0 : 135000000.0 / 11.0;
+		unsigned clocks_per_pixel = video_width == 320 ? 8 : 10;
+		info->geometry.aspect_ratio = (float) (video_width * clocks_per_pixel * sample_rate
+		                                      / (2.0 * md.master_clock * video_height));
+	}
 	info->timing.fps = mega_drive ? karashi_md_frame_rate(&md)
 	                   : sms_active() ? karashi_sms_frame_rate(&sms)
 	                                  : (double) KARASHI_SEGA8_CPU_CLOCK / KARASHI_SEGA8_FRAME_CYCLES;
